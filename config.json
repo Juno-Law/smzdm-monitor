@@ -1,0 +1,61 @@
+{
+  "keywords": [
+    "5w-30机油",
+    "洗衣凝珠",
+    "牛奶",
+    "酷态科6号ultra",
+    "酷态科10号ultra",
+    "无线鼠标",
+    "机械键盘"
+  ],
+  "intervalMinutes": 15,
+  "source": "http",
+  "sorts": [
+    "time",
+    "default"
+  ],
+  "waf": {
+    "maxAgeMinutes": 90
+  },
+  "skipExpired": true,
+  "skipNoInteraction": true,
+  "interactionGate": {
+    "minWorthy": 2,
+    "minComments": 2,
+    "combine": "any",
+    "defaultSort": {
+      "minWorthy": 5,
+      "minComments": 5,
+      "combine": "all",
+      "appliesTo": "defaultOnly"
+    }
+  },
+  "maxAgeDays": 7,
+  "maxAgeHoursDefault": 48,
+  "maxItemsPerKeyword": 40,
+  "server": {
+    "port": 7788
+  },
+  "notify": {
+    "toast": true,
+    "maxPerRound": 5
+  },
+  "pages": {
+    "maxPages": 2
+  },
+  "api": {
+    "enabled": false,
+    "baseUrl": "https://gw-openapi.zhidemai.com",
+    "keyEnv": "SMZDM_API_KEY",
+    "dailyBudget": 1800,
+    "size": 20
+  },
+  "detail": {
+    "concurrency": 3,
+    "minGapMs": 400
+  },
+  "browser": {
+    "executablePath": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    "headless": false
+  }
+}

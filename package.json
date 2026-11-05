@@ -1,0 +1,16 @@
+{
+  "name": "deal-watch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "关键词好价监控：定时搜索、过滤全 0、实时推送、历史留档",
+  "type": "commonjs",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "once": "node src/index.js --once",
+    "server": "node src/server.js"
+  },
+  "dependencies": {
+    "playwright-core": "^1.49.0"
+  }
+}
