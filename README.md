@@ -304,7 +304,17 @@ data/
 
 | 分支 | 内容 | 状态 |
 |---|---|---|
-| `vanilla` | 原生 JS + 手写 CSS 实现（默认分支） | 当前在用 |
-| `vue3` | Vue 3 重写版 | 计划中 |
+| `vanilla` | 原生 JS + 手写 CSS 实现（默认分支），`src/server.js` 直接吐 HTML | 可运行 |
+| `vue3` | 同一套后端 + `web/` 目录下的 Vue 3 前端（Vite + Tailwind） | 可运行 |
 
-Vue3 版从 `vanilla` 拉出，验收通过后再合回默认分支。在此之前 `vanilla` 保持可运行，随时能拿来对照或回退。
+两个分支共用同一份后端接口和 `data/deals.jsonl`，可以同时跑起来对比。
+
+```bash
+# 后端（两个分支都一样）
+node src/server.js                 # 7788
+
+# 只有 vue3 分支有前端工程
+cd web && npm install && npm run dev   # 5173，/api 已代理到 7788
+```
+
+目录结构与 Vue 写法说明见 [`web/README.md`](web/README.md)。

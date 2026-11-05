@@ -12,3 +12,7 @@ docs/*.png
 Thumbs.db
 .vscode/
 .idea/
+
+# 前端构建产物与截图
+web/dist/
+**/_shots/

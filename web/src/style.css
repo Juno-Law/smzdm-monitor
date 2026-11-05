@@ -1,0 +1,80 @@
+@import 'tailwindcss';
+
+/* design tokens —— 改这里就能整体换色，组件里只引用语义名 */
+@theme {
+  --font-sans: 'PingFang SC', 'HarmonyOS Sans SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', ui-sans-serif, system-ui, sans-serif;
+
+  --color-canvas: #f6f6f8;
+  --color-surface: #ffffff;
+
+  --color-ink: #17181c;
+  --color-ink-2: #5b616e;
+  --color-ink-3: #8b919e;
+  --color-ink-4: #b6bac3;
+
+  --color-line: #ebebef;
+
+  --color-brand: #e5484d;
+  --color-brand-strong: #cf3a3f;
+  --color-brand-soft: #fdecec;
+
+  --radius-card: 16px;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+  }
+
+  ::selection {
+    @apply bg-brand-soft text-brand-strong;
+  }
+
+  /* 细一点的滚动条，不然 Windows 上很抢戏 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-ink-4) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--color-ink-4);
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* 横向滚动时右边缘淡出，暗示“还能往右划” */
+@utility scroll-fade {
+  mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent 100%);
+}
+
+/* 列表进出场：上移淡入。放在全局，TransitionGroup 靠这个类名驱动 */
+.list-move,
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.list-enter-from {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+.list-leave-to {
+  opacity: 0;
+}
