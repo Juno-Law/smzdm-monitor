@@ -1,0 +1,7 @@
+* text=auto
+
+# Windows 脚本必须是 CRLF，否则 WSH / cmd 会解析出错
+*.vbs text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
