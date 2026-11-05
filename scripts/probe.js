@@ -1,6 +1,7 @@
 const { chromium } = require('playwright-core');
+const { resolveExecutable } = require('../src/config');
 
-const KW = process.argv[2] || '5w-30机油';
+const KW = process.argv[2] || '机械键盘';
 const HEADLESS = process.argv[3] !== 'headful';
 const URL = `https://search.smzdm.com/?c=home&s=${encodeURIComponent(KW)}&v=b`;
 
@@ -8,7 +9,7 @@ const URL = `https://search.smzdm.com/?c=home&s=${encodeURIComponent(KW)}&v=b`;
   let browser;
   try {
     browser = await chromium.launch({
-      executablePath: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      executablePath: resolveExecutable(),
       headless: HEADLESS,
       args: ['--disable-blink-features=AutomationControlled'],
     });

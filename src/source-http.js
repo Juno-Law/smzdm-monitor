@@ -9,6 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright-core');
+const { resolveExecutable } = require('./config');
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0';
@@ -136,7 +137,7 @@ class HttpSource {
     let browser;
     try {
       browser = await chromium.launch({
-        executablePath: this.cfg.browser.executablePath,
+        executablePath: resolveExecutable(this.cfg.browser && this.cfg.browser.executablePath),
         headless: false, // 无头过不了，必须真实窗口
         args: [
           '--disable-blink-features=AutomationControlled',

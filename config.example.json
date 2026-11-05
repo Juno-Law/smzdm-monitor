@@ -1,12 +1,7 @@
 {
   "keywords": [
-    "5w-30机油",
-    "洗衣凝珠",
-    "牛奶",
-    "酷态科6号ultra",
-    "酷态科10号ultra",
-    "无线鼠标",
-    "机械键盘"
+    "机械键盘",
+    "洗衣凝珠"
   ],
   "intervalMinutes": 15,
   "source": "http",
@@ -55,7 +50,7 @@
     "minGapMs": 400
   },
   "browser": {
-    "executablePath": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    "executablePath": "",
     "headless": false
   }
 }
