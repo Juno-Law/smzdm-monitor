@@ -14,17 +14,38 @@ $script:url = 'http://localhost:7788'
 $script:proc = $null
 $script:up = $false
 
+# 藏掉自己的控制台窗口。bat 用 start /min 拉起（-WindowStyle Hidden 在这台机器上
+# 会被拒，errorlevel 786 / 0x80070312），窗口先以最小化形式存在，这里直接隐藏。
+try {
+  Add-Type -Namespace Win32 -Name ConsoleWin -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+'@
+  $h = [Win32.ConsoleWin]::GetConsoleWindow()
+  if ($h -ne [IntPtr]::Zero) { [void][Win32.ConsoleWin]::ShowWindow($h, 0) }
+} catch { }
+
+# 启动标记：start-tray.bat 靠这个文件判断进程到底有没有跑起来
+try { [IO.File]::WriteAllText((Join-Path $script:dataDir 'boot.flag'), (Get-Date -Format 'HH:mm:ss')) } catch { }
+
 function Write-Log {
   param([string]$msg)
   $line = '{0} {1}' -f (Get-Date -Format 'HH:mm:ss'), $msg
   try { Add-Content -LiteralPath $script:trayLog -Value $line -Encoding UTF8 } catch { }
 }
 
+# 先落一行标记：脚本有没有真的跑起来，看这一行就知道
+Write-Log '--- 托盘启动 ---'
+
 # 同一个托盘进程重复点会被挡住；这里只保证不重复起 node
-$script:mutex = New-Object System.Threading.Mutex($false, 'Local\smzdm-tray-host')
-if (-not $script:mutex.WaitOne(0)) {
-  Write-Log '托盘已在运行，本次忽略'
-  exit
+try {
+  $script:mutex = New-Object System.Threading.Mutex($false, 'Local\smzdm-tray-host')
+  if (-not $script:mutex.WaitOne(0)) {
+    Write-Log '托盘已在运行，本次忽略'
+    exit
+  }
+} catch {
+  Write-Log ('互斥量创建失败，继续启动：' + $_.Exception.Message)
 }
 
 function Test-Port {
@@ -55,8 +76,6 @@ function Stop-Monitor {
 }
 
 try {
-  Write-Log '--- 托盘启动 ---'
-
   Add-Type -AssemblyName System.Windows.Forms
   Add-Type -AssemblyName System.Drawing
   Write-Log 'WinForms 已加载'
