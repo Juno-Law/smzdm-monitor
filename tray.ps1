@@ -1,6 +1,6 @@
 ﻿# 好价监控 · 托盘外壳
-# 由 start-tray.bat 以隐藏窗口方式拉起：托盘出图标，采集在后台跑。
-# 每一步都写 data\tray.log，出问题看那个文件，不靠黑窗口回话。
+# 由 start-tray.bat 以 start /min 方式拉起，启动后立即把自己的控制台藏掉。
+# 每一步写 data\tray.log，出问题看那个文件，不靠黑窗口回话。
 
 $ErrorActionPreference = 'Stop'
 
@@ -10,12 +10,13 @@ if (-not (Test-Path $script:dataDir)) { New-Item -ItemType Directory -Path $scri
 $script:outLog = Join-Path $script:dataDir 'run.log'
 $script:errLog = Join-Path $script:dataDir 'run.err.log'
 $script:trayLog = Join-Path $script:dataDir 'tray.log'
+$script:pidFile = Join-Path $script:dataDir 'tray.pid'
 $script:url = 'http://localhost:7788'
 $script:proc = $null
 $script:up = $false
 
-# 藏掉自己的控制台窗口。bat 用 start /min 拉起（-WindowStyle Hidden 在这台机器上
-# 会被拒，errorlevel 786 / 0x80070312），窗口先以最小化形式存在，这里直接隐藏。
+# 藏掉自己的控制台窗口。bat 用 start /min 拉起（带 -WindowStyle Hidden 会被系统
+# 拒绝，errorlevel 786 / 0x80070312），窗口先以最小化形式存在，这里直接隐藏。
 try {
   Add-Type -Namespace Win32 -Name ConsoleWin -MemberDefinition @'
 [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
@@ -32,20 +33,6 @@ function Write-Log {
   param([string]$msg)
   $line = '{0} {1}' -f (Get-Date -Format 'HH:mm:ss'), $msg
   try { Add-Content -LiteralPath $script:trayLog -Value $line -Encoding UTF8 } catch { }
-}
-
-# 先落一行标记：脚本有没有真的跑起来，看这一行就知道
-Write-Log '--- 托盘启动 ---'
-
-# 同一个托盘进程重复点会被挡住；这里只保证不重复起 node
-try {
-  $script:mutex = New-Object System.Threading.Mutex($false, 'Local\smzdm-tray-host')
-  if (-not $script:mutex.WaitOne(0)) {
-    Write-Log '托盘已在运行，本次忽略'
-    exit
-  }
-} catch {
-  Write-Log ('互斥量创建失败，继续启动：' + $_.Exception.Message)
 }
 
 function Test-Port {
@@ -75,13 +62,43 @@ function Stop-Monitor {
   $script:proc = $null
 }
 
+Write-Log '--- 托盘启动 ---'
+
+# 同一时刻只留一个托盘宿主。已经在跑就直接退；如果是残留宿主（端口没起、
+# 图标还挂着），接管它，否则用户双击后会「什么都没发生」。
+$script:mutex = $null
+try {
+  $script:mutex = New-Object System.Threading.Mutex($false, 'Local\smzdm-tray-host')
+  if (-not $script:mutex.WaitOne(0)) {
+    if (Test-Port 7788) {
+      Write-Log '已有实例在运行，本次忽略'
+      exit
+    }
+    $oldPid = 0
+    try { $oldPid = [int]((Get-Content -LiteralPath $script:pidFile -Raw) -replace '\D', '') } catch { }
+    if ($oldPid -gt 0) {
+      $oldProc = Get-Process -Id $oldPid -ErrorAction SilentlyContinue
+      if ($oldProc) {
+        Write-Log ("旧托盘宿主 pid=" + $oldPid + " 还活着但采集没跑，接管")
+        try { Stop-Process -Id $oldPid -Force -ErrorAction Stop } catch { }
+        Start-Sleep -Milliseconds 900
+      }
+    }
+    if (-not $script:mutex.WaitOne(3000)) { Write-Log '互斥量仍被占用，放弃接管' }
+  }
+} catch {
+  Write-Log ('互斥量异常，继续启动：' + $_.Exception.Message)
+}
+
+try { Set-Content -LiteralPath $script:pidFile -Value $PID -Encoding ASCII } catch { }
+
 try {
   Add-Type -AssemblyName System.Windows.Forms
   Add-Type -AssemblyName System.Drawing
   Write-Log 'WinForms 已加载'
 
   if (Test-Port 7788) {
-    Write-Log '7788 已被占用，判定已有实例在跑，本次只挂图标不重启采集'
+    Write-Log '7788 已被占用，判定采集中，本次只挂图标不重启'
     $script:up = $true
   } else {
     Start-Monitor
@@ -129,7 +146,6 @@ try {
 
   Write-Log '托盘图标已显示，进入消息循环'
   [System.Windows.Forms.Application]::Run()
-
   $timer.Stop()
 } catch {
   Write-Log ('出错：' + $_.Exception.Message)
@@ -137,6 +153,7 @@ try {
 } finally {
   try { Stop-Monitor } catch { }
   if ($script:icon) { $script:icon.Visible = $false; $script:icon.Dispose() }
-  try { $script:mutex.ReleaseMutex() } catch { }
+  try { if ($script:mutex) { $script:mutex.ReleaseMutex() } } catch { }
+  try { Remove-Item -LiteralPath $script:pidFile -Force -ErrorAction SilentlyContinue } catch { }
   Write-Log '--- 托盘退出 ---'
 }
