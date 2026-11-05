@@ -150,7 +150,13 @@ npm start            # 常驻，每 15 分钟一轮
 npm run once         # 只跑一轮，适合验证
 ```
 
-或者双击 `start.bat`。
+或者双击 `start-tray.vbs`（**日常就用这个**）：托盘出图标，采集在后台跑，不占任务栏。
+
+- 双击图标 → 打开历史页
+- 右键菜单 → 打开历史页 / 查看日志 / 重启采集 / 退出
+- 日志写到 `data/run.log`，超过 5MB 自动轮转一份为 `run.log.1`
+- 如果 vbs 被安全软件拦了，用 `start-tray.bat` 替代（黑窗口会闪一下）
+- 想看实时滚动的日志，还是用老的 `start.bat`，那会开一个独立的命令行窗口
 
 **配置**：`config.json` 不随仓库提供（里面是每个人自己的关键词）。第一次启动会自动从 `config.example.json` 复制一份出来，默认关键词是 `机械键盘`、`洗衣凝珠`——改成你要的再跑，否则搜的不是你想买的东西。
 
@@ -235,6 +241,8 @@ npm run once         # 只跑一轮，适合验证
 config.example.json  配置模板（进 git，别直接改这个）
 config.json          你的实际配置（不进 git，首次启动自动生成）
 .env                 API Key（不进 git）
+start-tray.vbs       托盘启动器（双击这个）
+tray.ps1             托盘宿主：起停采集、右键菜单、日志轮转
 src/
   config.js     配置读写 + 首次生成 + 浏览器路径探测
   index.js      调度主循环 + 三段式过滤
