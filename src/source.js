@@ -1,5 +1,6 @@
 const { chromium } = require('playwright-core');
 const { extractBlocks } = require('./parse');
+const { resolveExecutable } = require('./config');
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0';
@@ -41,7 +42,7 @@ class SmzdmSource {
 
     this.log('  启动浏览器…');
     this.browser = await chromium.launch({
-      executablePath: this.cfg.browser.executablePath,
+      executablePath: resolveExecutable(this.cfg.browser && this.cfg.browser.executablePath),
       headless: !!this.cfg.browser.headless,
       args: [
         '--disable-blink-features=AutomationControlled',

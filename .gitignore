@@ -4,6 +4,9 @@ data/
 *.log
 docs/*.png
 
+# 个人配置（关键词、本机浏览器路径），模板见 config.example.json
+config.json
+
 # 本地工作记录，不入库
 .workbuddy/
 

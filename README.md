@@ -138,7 +138,7 @@ search.smzdm.com/?c=faxian&s=关键词&order=time&v=b   → 最新排序
 | 必填 | `product_query` / `request_from` / `question_id` |
 | 注意 | `query_process` 必须是 `1`，传 `0` 返回空 |
 
-Key 存在 **`.env`**，不写进 `config.json`（后者会被导出、截图、发给别人）。日志里只打印 `830f***04ac` 这种脱敏形式。
+Key 存在 **`.env`**，不写进 `config.json`（后者可能被截图发出去）。日志里只打印 `830f***04ac` 这种脱敏形式。
 
 ---
 
@@ -151,6 +151,8 @@ npm run once         # 只跑一轮，适合验证
 ```
 
 或者双击 `start.bat`。
+
+**配置**：`config.json` 不随仓库提供（里面是每个人自己的关键词）。第一次启动会自动从 `config.example.json` 复制一份出来，默认关键词是 `机械键盘`、`洗衣凝珠`——改成你要的再跑，否则搜的不是你想买的东西。
 
 启动后：
 - 桌面右下角弹通知，点击打开历史页
@@ -186,11 +188,9 @@ npm run once         # 只跑一轮，适合验证
 ```json
 {
   "keywords": [
-    "5w-30机油",
+    "机械键盘",
     "洗衣凝珠",
-    "牛奶",
-    "MacBook Pro M6",
-    "usmile儿童电动牙刷替换刷头"
+    "牛奶"
   ]
 }
 ```
@@ -224,7 +224,7 @@ npm run once         # 只跑一轮，适合验证
 | `maxItemsPerKeyword` | 40 | 每个关键词最多保留前 N 条（合并后约 25–38 条，留 40 头寸） |
 | `api.enabled` | false | 改 true 走官方接口（会失去时效性，慎用） |
 | `notify.maxPerRound` | 5 | 一轮超过 N 条就合并成一条汇总通知，避免刷屏 |
-| `browser.executablePath` | Edge | 本机没装 Chrome，用 Edge |
+| `browser.executablePath` | 空 = 自动探测 | 留空时按 Edge → Chrome → Chromium 的顺序找本机装的那个。找不到会直接报错并提示填完整路径 |
 | `browser.headless` | **false** | **不能改成 true**，过墙会失败 |
 
 ---
@@ -232,8 +232,11 @@ npm run once         # 只跑一轮，适合验证
 ## 文件结构
 
 ```
-.env            API Key（不进 git）
+config.example.json  配置模板（进 git，别直接改这个）
+config.json          你的实际配置（不进 git，首次启动自动生成）
+.env                 API Key（不进 git）
 src/
+  config.js     配置读写 + 首次生成 + 浏览器路径探测
   index.js      调度主循环 + 三段式过滤
   source-http.js  搜索页采集 · 纯 HTTP（默认，过墙后不再开浏览器）
   source.js     搜索页采集 · 浏览器渲染（纯 HTTP 失效时的兜底）
@@ -304,7 +307,9 @@ data/
 
 | 分支 | 内容 | 状态 |
 |---|---|---|
-| `vanilla` | 原生 JS + 手写 CSS 实现（默认分支） | 当前在用 |
-| `vue3` | Vue 3 重写版 | 计划中 |
+| `vanilla` | 原生 JS + 手写 CSS 实现（默认分支） | 在用，采集主程序 |
+| `vue3` | Vue 3 + Vite + Tailwind 重写的前端 | 已完成，可切换 |
 
-Vue3 版从 `vanilla` 拉出，验收通过后再合回默认分支。在此之前 `vanilla` 保持可运行，随时能拿来对照或回退。
+两版**共用同一套采集与数据**：`src/` 是服务端，跟分支无关；差别只在历史页前端。`vanilla` 用内联 CSS+ES5 直接吐页面，`vue3` 是独立 Vite 工程（`web/`），开发时跑在 5173 端口，接口仍指向 7788。
+
+想看 Vue3 版：切到 `vue3` 分支，`cd web && npm install && npm run dev`。`web/README.md` 里写了按顺序读文件的路径。

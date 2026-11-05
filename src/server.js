@@ -1,12 +1,12 @@
 const http = require('http');
 const fs = require('fs');
-const path = require('path');
 
-const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
+const { CONFIG_PATH, read: readConfigFile } = require('./config');
 
+// 改不动配置时别把整个页面搞崩，返回 null 让调用方自己决定
 function readConfig() {
   try {
-    return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    return readConfigFile();
   } catch (_) {
     return null;
   }
@@ -722,7 +722,7 @@ module.exports = { createServer };
 // 单独启动历史页：node src/server.js
 if (require.main === module) {
   const { Store, Reads } = require('./store');
-  const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf8'));
+  const cfg = readConfig();
   const store = new Store();
   createServer(store, cfg, new Reads());
 }

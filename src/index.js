@@ -1,5 +1,3 @@
-const fs = require('fs');
-const path = require('path');
 const { SmzdmSource } = require('./source');
 const { HttpSource } = require('./source-http');
 const { ApiSource } = require('./source-api');
@@ -8,7 +6,9 @@ const { Store, Reads, parseTime } = require('./store');
 const { notifyRound } = require('./notify');
 const { createServer } = require('./server');
 
-const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf8'));
+const { read: readConfig, CONFIG_PATH } = require('./config');
+
+const cfg = readConfig();
 const ONCE = process.argv.includes('--once');
 
 const ts = () => new Date().toTimeString().slice(0, 8);
@@ -122,12 +122,10 @@ function limitPerKeyword(items, n) {
   return out;
 }
 
-const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
-
 // 历史页可以改关键词，每轮开始前重新读一次，省得重启
 function reloadKeywords() {
   try {
-    const c = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    const c = readConfig();
     if (!Array.isArray(c.keywords)) return;
     const list = c.keywords.map((s) => String(s).trim()).filter(Boolean);
     if (!list.length) return;
