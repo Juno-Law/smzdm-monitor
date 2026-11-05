@@ -2,24 +2,30 @@
 setlocal
 cd /d "%~dp0"
 
-rem Start the tray host in the background via cmd, not WSH.
+rem Cold start takes 6-10s (WAF handshake + loading history), so give it 20s.
 start "" "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0tray.ps1"
 
-timeout /t 4 /nobreak >nul
-
-netstat -ano | findstr ":7788" | findstr "LISTENING" >nul
-if not errorlevel 1 (
-  echo.
-  echo   OK - started. Look for the icon near the clock.
-  timeout /t 2 /nobreak >nul
-  exit /b 0
+for /l %%i in (1,1,20) do (
+  timeout /t 1 /nobreak >nul
+  netstat -ano | findstr ":7788" | findstr "LISTENING" >nul && goto :ok
 )
+goto :fail
 
+:ok
 echo.
-echo   [FAILED] tray did not start within 4s.
-echo   Running it in the foreground so the error stays visible...
+echo   OK - running. Look for the icon near the clock (may be under the ^ arrow).
+timeout /t 2 /nobreak >nul
+exit /b 0
+
+:fail
 echo.
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0tray.ps1"
+echo   [FAILED] port 7788 still not listening after 20s.
 echo.
-echo   Copy the red text above if it failed again.
+if exist "%~dp0data\run.err.log" (
+  echo   ---- data\run.err.log ----
+  type "%~dp0data\run.err.log"
+  echo.
+)
+echo   Also check data\run.log for the last round.
+echo   Copy this window content back if it keeps failing.
 pause
