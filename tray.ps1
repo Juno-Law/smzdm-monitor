@@ -21,7 +21,7 @@ function Write-Log {
 }
 
 # 同一个托盘进程重复点会被挡住；这里只保证不重复起 node
-$script:mutex = New-Object System.Threading.Mutex($false, 'Global\smzdm-tray-host')
+$script:mutex = New-Object System.Threading.Mutex($false, 'Local\smzdm-tray-host')
 if (-not $script:mutex.WaitOne(0)) {
   Write-Log '托盘已在运行，本次忽略'
   exit
