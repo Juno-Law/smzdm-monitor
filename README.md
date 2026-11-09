@@ -246,6 +246,7 @@ config.json          你的实际配置（不进 git，首次启动自动生成�
 .env                 API Key（不进 git）
 start-tray.bat       托盘启动器（双击这个）
 tray.ps1             托盘宿主：起停采集、右键菜单、日志轮转
+start.bat            前台启动：开一个窗口实时滚日志
 src/
   config.js     配置读写 + 首次生成 + 浏览器路径探测
   index.js      调度主循环 + 三段式过滤
@@ -254,16 +255,21 @@ src/
   time.js       时间文本转毫秒
   parse.js      浏览器模式下的 DOM 抽取
   source-api.js 官方接口采集（备用，默认不启用）
-  detail.js     直连详情页补互动（仅 API 模式用）
+  detail.js     直连详情页抓互动数（采集补数据 + 前端刷新共用）
   backfill-img.js  一次性回填历史记录的商品图（读详情页 og:image）
   env.js        .env 读取 + Key 脱敏
   store.js      jsonl 存储 + 去重 + 时间解析 + 已读标记
+  interactions.js  互动数补丁层：详情页抓到的实时值缓存到 data/interactions.json
   notify.js     Windows Toast 通知
-  server.js     历史页
+  server.js     HTTP 接口（/api/deals、/api/read、/api/keywords、/api/interactions）+ 兜底页
 data/
   deals.jsonl   所有记录，一行一条，可直接文本打开
   reads.json    已读标记：baseline 时刻 + 已读 id 列表
+  interactions.json  互动数补丁：worthy/unworthy/favs/comments + 抓取时间
   waf-cookie.json  过墙 cookie 缓存（失效自动刷新）
+web/                历史页前端（Vue 3 + Vite + Tailwind）
+  src/            组件与状态，写法说明见 web/README.md
+  dist/           构建产物（不进 git）
 ```
 
 ---
@@ -316,19 +322,14 @@ data/
 
 ## 分支说明
 
-| 分支 | 内容 | 状态 |
-|---|---|---|
-| `vanilla` | 原生 JS + 手写 CSS 实现（默认分支），`src/server.js` 直接吐 HTML | 在用，采集主程序 |
-| `vue3` | 同一套后端 + `web/` 目录下的 Vue 3 前端（Vite + Tailwind） | 已完成，可切换 |
-
-两个分支共用同一份后端接口和 `data/deals.jsonl`，可以同时跑起来对比。
+只有 `master` 一个分支，一套代码：`src/` 是采集与接口后端，`web/` 是 Vue 3 前端（Vite + Tailwind）。历史页由 Vue 3 提供，旧的 vanilla 内联页面只留在 git 历史里。
 
 ```bash
-# 后端（两个分支都一样）
-node src/server.js                 # 7788
+node src/server.js                     # 后端接口 7788（正常情况下由托盘代起）
 
-# 只有 vue3 分支有前端工程
-cd web && npm install && npm run dev   # 5173，/api 已代理到 7788
+cd web && npm install                  # 首次
+cd web && npm run dev                  # 前端 5173，/api 已代理到 7788
+cd web && npm run build                # 产物在 web/dist
 ```
 
 目录结构与 Vue 写法说明见 [`web/README.md`](web/README.md)。
