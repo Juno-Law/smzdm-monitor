@@ -1,10 +1,11 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { ThumbsUp, ThumbsDown, Star, MessageSquare, ImageOff } from 'lucide-vue-next';
-import { splitPrice, largeImage, sourceOf, isHotTag } from '../utils/format';
+import { splitPrice, largeImage, sourceOf, isHotTag, relativeTime } from '../utils/format';
 
 const props = defineProps({
   deal: { type: Object, required: true },
+  // 界面上的「活跃未读」：点过变灰的传 false（灰化、红点、已看按钮都由它控制）
   unread: { type: Boolean, default: false },
 });
 
@@ -14,12 +15,20 @@ const price = computed(() => splitPrice(props.deal.priceText));
 const source = computed(() => sourceOf(props.deal.sorts));
 const tags = computed(() => (props.deal.tags || []).slice(0, 3));
 
-const stats = computed(() => [
-  { key: 'worthy', icon: ThumbsUp, value: props.deal.worthy || 0, label: '值' },
-  { key: 'unworthy', icon: ThumbsDown, value: props.deal.unworthy || 0, label: '不值' },
-  { key: 'favs', icon: Star, value: props.deal.favs || 0, label: '收藏' },
-  { key: 'comments', icon: MessageSquare, value: props.deal.comments || 0, label: '评论' },
-]);
+/** 互动数据的抓取时间，鼠标悬停时提示一下，免得以为数字是死的 */
+const freshness = computed(() =>
+  props.deal.interactionsAt ? `互动数据更新于 ${relativeTime(props.deal.interactionsAt)}` : ''
+);
+
+const stats = computed(() => {
+  const suffix = freshness.value ? `（${freshness.value}）` : '';
+  return [
+    { key: 'worthy', icon: ThumbsUp, value: props.deal.worthy || 0, label: `值${suffix}` },
+    { key: 'unworthy', icon: ThumbsDown, value: props.deal.unworthy || 0, label: `不值${suffix}` },
+    { key: 'favs', icon: Star, value: props.deal.favs || 0, label: `收藏${suffix}` },
+    { key: 'comments', icon: MessageSquare, value: props.deal.comments || 0, label: `评论${suffix}` },
+  ];
+});
 
 const imgSrc = ref('');
 const imgBroken = ref(false);

@@ -7,7 +7,7 @@ import {
   rows,
   hasMore,
   loadMore,
-  isUnread,
+  isDimmed,
   markRead,
   totalCount,
 } from '../stores/deals';
@@ -85,7 +85,7 @@ function handleEmptyAction() {
         <DealCard
           v-else
           :deal="row.deal"
-          :unread="isUnread(row.deal)"
+          :unread="!isDimmed(row.deal)"
           @read="markRead"
           @open="markRead"
         />

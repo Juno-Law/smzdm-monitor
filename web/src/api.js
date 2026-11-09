@@ -28,4 +28,11 @@ export const api = {
 
   /** 单条或批量都行 */
   markRead: (ids) => request('/api/read', { method: 'POST', body: { ids: [].concat(ids) } }),
+
+  /**
+   * 批量补「值 / 不值 / 收藏 / 评论」。
+   * 服务端有 TTL 缓存，30 分钟内重复请求同一个 id 不会真的去抓详情页。
+   * @returns {Promise<{ ok: boolean, refreshed: number, items: Record<string, object> }>}
+   */
+  fetchInteractions: (ids) => request(`/api/interactions?ids=${[].concat(ids).join(',')}`),
 };

@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 
 const { CONFIG_PATH, read: readConfigFile } = require('./config');
+const interactions = require('./interactions');
 
 // 改不动配置时别把整个页面搞崩，返回 null 让调用方自己决定
 function readConfig() {
@@ -638,6 +639,9 @@ setInterval(load,60000);
 function createServer(store, cfg, reads) {
   const port = (cfg.server && cfg.server.port) || 7788;
   const server = http.createServer((req, res) => {
+    // 新路由要精确匹配，先把 query 摘掉；老的几个接口照旧用裸 startsWith
+    const pathname = req.url.split('?')[0];
+
     if (req.url.startsWith('/api/deals')) {
       const snap = reads.snapshot();
       res.writeHead(200, {
@@ -648,7 +652,8 @@ function createServer(store, cfg, reads) {
         JSON.stringify({
           baseline: snap.baseline,
           read: snap.read,
-          items: store.recent(0),
+          // 互动数在 deals.jsonl 里是入库快照，这里把补丁层贴上去再返回
+          items: interactions.merge(store.recent(0)),
         })
       );
       return;
@@ -703,6 +708,43 @@ function createServer(store, cfg, reads) {
         });
         return;
       }
+    }
+
+    // 补互动数据：/api/interactions?ids=1,2,3
+    // TTL 内直接给缓存，过期的才去抓 https://www.smzdm.com/p/{id}
+    if (pathname === '/api/interactions' && req.method === 'GET') {
+      const query = new URL(req.url, 'http://127.0.0.1').searchParams;
+      const ids = String(query.get('ids') || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => /^\d{6,}$/.test(s));
+
+      // 每请求现读配置：改 refreshTtlMinutes 不用重启
+      const detailCfg = (readConfig() || {}).detail || {};
+
+      interactions
+        .refresh(ids, {
+          ttlMinutes: detailCfg.refreshTtlMinutes ?? 30,
+          maxIds: detailCfg.refreshMaxIds ?? 12,
+          concurrency: detailCfg.concurrency ?? 3,
+          minGapMs: detailCfg.minGapMs ?? 400,
+          log: () => {}, // 不往采集日志里灌
+        })
+        .then((out) => {
+          res.writeHead(200, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': 'no-store',
+          });
+          res.end(JSON.stringify(out));
+        })
+        .catch((e) => {
+          res.writeHead(200, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': 'no-store',
+          });
+          res.end(JSON.stringify({ ok: false, error: String(e.message).split('\n')[0], items: {} }));
+        });
+      return;
     }
 
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });

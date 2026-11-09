@@ -47,7 +47,9 @@
   },
   "detail": {
     "concurrency": 3,
-    "minGapMs": 400
+    "minGapMs": 400,
+    "refreshTtlMinutes": 30,
+    "refreshMaxIds": 12
   },
   "browser": {
     "executablePath": "",

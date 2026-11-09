@@ -54,7 +54,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 并发补全，带最小间隔，避免对站点造成突发压力
 async function enrichAll(items, opts = {}) {
-  const { concurrency = 3, minGapMs = 400, log = console.log } = opts;
+  const { concurrency = 3, minGapMs = 400, timeoutMs = 20000, log = console.log } = opts;
   const out = new Array(items.length);
   let cursor = 0;
   let lastAt = 0;
@@ -73,7 +73,7 @@ async function enrichAll(items, opts = {}) {
       let result = null;
       for (let attempt = 1; attempt <= 2 && !result; attempt++) {
         try {
-          result = await fetchInteractions(it.articleId);
+          result = await fetchInteractions(it.articleId, timeoutMs);
         } catch (e) {
           if (attempt === 2) {
             fail++;
