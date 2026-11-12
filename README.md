@@ -11,14 +11,16 @@
 1. 关键词去搜，你有几个词就搜几个词
 2. **每轮抓两路排序，合并去重**：最新排序（快）+ 综合排序（热）
 3. 互动全 0（值、不值、收藏、评论都是 0）的直接丢
-4. 门槛分两档：
-   - **最新排序：值 ≥ 2 或 评论 ≥ 2**，任一条达标即可
-   - **只在综合排序出现：值 ≥ 5 且 评论 ≥ 5**，两个都要够
+4. 互动门槛：**值 ≥ 1 或 评论 ≥ 1**，任一条达标即可（最新排序和综合排序用同一套）
 5. 达标的推给我，我自己点进去判断
 
 额外挡掉的三类：**已标过期/售罄的**、**发布超过 7 天的**、**只在综合排序出现且超过 48 小时的**。
 
-门槛这样分档是有原因的：最新排序抓的是刚发的，冷门品类（机油）发布 4 小时后真的只有 2 个人点值，门槛调高会全挡掉；综合排序爬的是热帖，本来就靠人气上位，能上榜却连 5 个值 5 条评论都没有的，多半是小众配件或已过气的，不值得推。
+门槛定在 1 是有原因的：冷门品类（机油、Macbook Pro）发布几小时后可能只有 1 个人点值，再高就全挡掉了。高频词（牛奶、洗衣凝珠）噪音多，可以在关键词弹窗里单独把门槛提到 10，不用全局一刀切。
+
+> 早期综合排序单独用过「值 ≥ 5 且 评论 ≥ 5」的严门槛，现在已取消 —— 同一条爆料不该因为「从哪个排序捞到」而被区别对待。
+
+上面这些数字都是**全局默认值**。哪个词想另算（比如 Macbook Pro 放宽、牛奶收紧），可以在关键词弹窗里单独覆盖，见 [每个关键词单独设规则](#每个关键词单独设规则)。
 
 ---
 
@@ -165,8 +167,11 @@ npm run once         # 只跑一轮，适合验证
 
 启动后：
 - 桌面右下角弹通知，点击打开历史页
-- 历史页：**http://localhost:7788**（按发布时间倒序）
+- 历史页：**http://localhost:7788**（Vue 3 版，由 `src/server.js` 直接托管 `web/dist`；按发布时间倒序）
 - 想单独看历史页：`npm run server`
+
+> 改了 `web/` 里的代码，要 `cd web && npm run build` 之后刷新 7788 才会变——那是构建产物，不热更新。开发时照旧 `npm run dev` 用 5173。
+> 没有构建产物时 7788 会直接返回一行提示（`cd web && npm run build`），不会再有第二套页面。旧的 vanilla 内联页面已经删了，要翻历史用 `git log`。
 
 ---
 
@@ -188,7 +193,7 @@ npm run once         # 只跑一轮，适合验证
 
 **方式一：页面上改（推荐）**
 
-历史页顶部点「关键词」，弹窗里直接增删，保存即可。**不用重启**——采集主程序每轮开始前会重读 `config.json`，下一轮就生效。
+历史页顶部点「关键词」，弹窗里直接增删。每行右侧有滑杆图标，点开可以给这个词单独设规则（见下一节）。保存即可，**不用重启**——采集主程序每轮开始前会重读 `config.json`，下一轮就生效。
 
 弹窗里会自动去重（忽略大小写）、去掉首尾空格和空行，最多 40 个词。
 
@@ -197,20 +202,48 @@ npm run once         # 只跑一轮，适合验证
 ```json
 {
   "keywords": [
-    "机械键盘",
-    "洗衣凝珠",
-    "牛奶"
+    { "name": "机械键盘" },
+    { "name": "洗衣凝珠", "rules": { "maxItemsPerKeyword": 10 } },
+    { "name": "牛奶", "rules": { "maxAgeDays": 2, "notify": false } }
   ]
 }
 ```
 
-同样不用重启，下一轮自动生效。注意上一行末尾补逗号，最后一行不加；必须是英文引号。
+也认旧的纯字符串写法（`"机械键盘"`），读进来会自动当成「没有自定义规则」。同样不用重启。注意上一行末尾补逗号，最后一行不加；必须是英文引号。
 
-双十一加一批，过完删掉就行。
+双十一加一批，过完删掉就行。删掉的词，历史里那些条目的 `keyword` 还在，只是标签栏没了，去「全部」里能看到。
+
+### 每个关键词单独设规则
+
+`rules` 里**只写要覆盖的项**，没写的沿用上一节的全局值。可用字段：
+
+| 字段 | 范围 | 不写时 |
+|---|---|---|
+| `skipExpired` | true / false | 全局 `skipExpired` |
+| `skipNoInteraction` | true / false | 全局 `skipNoInteraction` |
+| `interactionGate.minWorthy` | 0–9999 | 全局门槛，0 = 不卡 |
+| `interactionGate.minComments` | 0–9999 | 同上 |
+| `interactionGate.combine` | `any` / `all` | 全局 `combine` |
+| `maxAgeDays` | 0–3650 | 全局值，**0 = 不限** |
+| `maxAgeHoursDefault` | 0–8760 | 全局值，0 = 不限 |
+| `maxItemsPerKeyword` | 1–200 | 全局值（`config.json` 没写时按 40） |
+| `notify` | true / false | 全局 `notify.toast`。关掉只影响弹不弹，**照样入库** |
+
+三种典型用法：
+
+- **冷门高价**（Macbook Pro、switch2）：`"skipNoInteraction": false` + 两个门槛都填 0。这类一天可能只有 1–2 个值，甚至 0 值但真降价，按全局规则会被误杀。
+- **日百高频**（牛奶）：门槛抬到「值 ≥ 8 且 评论 ≥ 5」，再 `"notify": false`，避免每轮连弹好几条。
+- **短周期促销**：`"maxAgeDays": 1`，超过一天的直接不要。
+
+> 同一个商品被两个词同时命中时只入库一条，归属 `keywords` 里**靠前**的那个词，规则也按它的算。想给某个词留保底，把它放在数组前面。
+
+`rules` 的改动同样是**下一轮生效**；改全局字段（如 `maxItemsPerKeyword`）还是要重启进程。
 
 ---
 
 ## 配置说明
+
+下表是**全局默认值**。单个关键词可以在弹窗里覆盖其中一部分（`rules` 字段），没覆盖的仍按这里算。
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
@@ -222,19 +255,31 @@ npm run once         # 只跑一轮，适合验证
 | `pages.maxPages` | 2 | 最多翻几页。**自适应**：只有第一页 20 条跨度不足一个轮询周期时才翻第二页（只对最新排序生效） |
 | `skipExpired` | true | 跳过标了"过期/售罄"的 |
 | `skipNoInteraction` | true | 跳过互动全 0 的 |
-| `interactionGate.minWorthy` | 2 | 值达到这个数才推（默认门槛，用于最新排序） |
-| `interactionGate.minComments` | 2 | 评论达到这个数才推（与「值」是或关系） |
+| `interactionGate.minWorthy` | 1 | 值达到这个数才推（两种排序共用） |
+| `interactionGate.minComments` | 1 | 评论达到这个数才推（与「值」是或关系） |
 | `interactionGate.combine` | `any` | `any` 任一达标 / `all` 全部达标 |
-| `interactionGate.defaultSort.minWorthy` | 5 | **只在综合排序出现**的条目，值要达到这个数 |
-| `interactionGate.defaultSort.minComments` | 5 | 同上，评论要达到这个数 |
-| `interactionGate.defaultSort.combine` | `all` | `all` 表示值和评论都要够，不是或 |
-| `interactionGate.defaultSort.appliesTo` | `defaultOnly` | 改 `hasDefault` 则连「两路都有」的条目也按严门槛算 |
 | `maxAgeDays` | 7 | 超过几天的爆料不要。设为 0 关闭 |
-| `maxItemsPerKeyword` | 40 | 每个关键词最多保留前 N 条（合并后约 25–38 条，留 40 头寸） |
+| `maxItemsPerKeyword` | 40 | 每个关键词每轮最多入库前 N 条（按搜索结果顺序，不是按时间） |
 | `api.enabled` | false | 改 true 走官方接口（会失去时效性，慎用） |
 | `notify.maxPerRound` | 5 | 一轮超过 N 条就合并成一条汇总通知，避免刷屏 |
 | `browser.executablePath` | 空 = 自动探测 | 留空时按 Edge → Chrome → Chromium 的顺序找本机装的那个。找不到会直接报错并提示填完整路径 |
 | `browser.headless` | **false** | **不能改成 true**，过墙会失败 |
+
+---
+
+## 页面上的互动数从哪来
+
+`deals.jsonl` 只追加、不改写，所以「值 / 不值 / 收藏 / 评论」是在入库那一刻定死的。页面上看到的是三层叠加：
+
+| 来源 | 覆盖范围 | 更新频率 |
+|---|---|---|
+| 入库快照（`deals.jsonl`） | 全部记录 | 定死不变 |
+| 采集顺手写（每轮搜索页的数字） | 本轮搜索结果里**已入库**的条目 | 每轮 15 分钟 |
+| 详情页补抓（`data/interactions.json`） | 最近 3 天入库的，当前屏的排前面 | 5 分钟一批 12 条 |
+
+详情页那条链路要注意：`www.smzdm.com/p/{id}` 用普通浏览器 UA 会被腾讯验证码接管（只回一张 1.7KB 的挑战页，`refreshed: 0`），`src/detail.js` 换成搜索引擎爬虫 UA 才拿得到完整 HTML。这属于绕站点的反爬策略，**只适合本机低频只读**，别把刷新频率往上调。
+
+滑出搜索窗口、又排在列表很靠后的条目，会停在最后一次抓到的数字 —— 详情页那层是轮转的，一批 12 条，量大了要几小时才转到。
 
 ---
 
@@ -255,13 +300,14 @@ src/
   time.js       时间文本转毫秒
   parse.js      浏览器模式下的 DOM 抽取
   source-api.js 官方接口采集（备用，默认不启用）
-  detail.js     直连详情页抓互动数（采集补数据 + 前端刷新共用）
+  detail.js     直连详情页抓互动数（爬虫 UA 绕验证码；采集补数据 + 前端刷新共用）
   backfill-img.js  一次性回填历史记录的商品图（读详情页 og:image）
   env.js        .env 读取 + Key 脱敏
   store.js      jsonl 存储 + 去重 + 时间解析 + 已读标记
+  keywords.js   关键词归一化（旧字符串→对象）+ 每个词的规则解析
   interactions.js  互动数补丁层：详情页抓到的实时值缓存到 data/interactions.json
   notify.js     Windows Toast 通知
-  server.js     HTTP 接口（/api/deals、/api/read、/api/keywords、/api/interactions）+ 兜底页
+  server.js     HTTP 接口（/api/deals、/api/read、/api/keywords、/api/interactions）+ 托管 web/dist
 data/
   deals.jsonl   所有记录，一行一条，可直接文本打开
   reads.json    已读标记：baseline 时刻 + 已读 id 列表
@@ -299,7 +345,11 @@ web/                历史页前端（Vue 3 + Vite + Tailwind）
 
 页面当天发布的条目只给 `11:08` 这种纯时分，**没有日期**。`store.js` 里对纯时分按"今天"算，如果晚于当前时刻则算昨天。跨零点时依赖这个判断。
 
-**5. WAF 规则或页面结构会变**
+**5. 详情页改走验证码**
+
+`www.smzdm.com/p/{id}` 从 2026-11 起对普通 UA 返回腾讯验证码挑战页。现在的做法是伪装成搜索引擎爬虫（服务端会走 SSR 分支）。这条哪天失效了，表现是**页面上所有条目的互动数都不再更新**，日志里详情页请求返回的 `refreshed` 恒为 0。
+
+**6. WAF 规则或页面结构会变**
 
 纯 HTTP 模式依赖两个外部条件：cookie 能过墙、HTML 结构不变。
 
@@ -322,14 +372,15 @@ web/                历史页前端（Vue 3 + Vite + Tailwind）
 
 ## 分支说明
 
-只有 `master` 一个分支，一套代码：`src/` 是采集与接口后端，`web/` 是 Vue 3 前端（Vite + Tailwind）。历史页由 Vue 3 提供，旧的 vanilla 内联页面只留在 git 历史里。
+只有 `master` 一个分支，一套代码：`src/` 是采集与接口后端，`web/` 是 Vue 3 前端（Vite + Tailwind）。历史页只有 Vue 3 一套，由 `src/server.js` 托管 `web/dist`；以前那个 vanilla 内联页面已经从代码里删掉了。
 
 ```bash
 node src/server.js                     # 后端接口 7788（正常情况下由托盘代起）
+                                       # 同时托管 web/dist，所以 7788 打开就是 Vue 版
 
 cd web && npm install                  # 首次
 cd web && npm run dev                  # 前端 5173，/api 已代理到 7788
-cd web && npm run build                # 产物在 web/dist
+cd web && npm run build                # 产物在 web/dist，7788 直接读它
 ```
 
 目录结构与 Vue 写法说明见 [`web/README.md`](web/README.md)。

@@ -21,9 +21,22 @@ export const api = {
   /** @returns {Promise<{ baseline: string, read: string[], items: object[] }>} */
   fetchDeals: () => request('/api/deals'),
 
-  /** @returns {Promise<{ keywords: string[] }>} */
+  /**
+   * 关键词现在是对象数组：[{ name, rules? }]，rules 只写覆盖项。
+   * defaults 是后端实际生效的全局值（弹窗拿它显示「默认 7」），
+   * limits 是各字段的合法区间，和后端 clamp 同源。
+   * @returns {Promise<{
+   *   keywords: Array<{ name: string, rules?: object }>,
+   *   defaults: object,
+   *   limits: object
+   * }>}
+   */
   fetchKeywords: () => request('/api/keywords'),
 
+  /**
+   * 全量覆盖保存。元素可以是字符串（会被后端当成 { name }），
+   * 返回 { ok, keywords, defaults, error? } —— HTTP 恒 200，业务失败要看 ok。
+   */
   saveKeywords: (keywords) => request('/api/keywords', { method: 'POST', body: { keywords } }),
 
   /** 单条或批量都行 */

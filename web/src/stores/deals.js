@@ -17,7 +17,11 @@ export const state = reactive({
   // 不能复用 readIds：那个每 60 秒会被服务端数据整体替换，承载不了「本会话」语义。
   settledIds: new Set(),
   baselineAt: 0,
+  // [{ name, rules? }]，rules 是「相对全局默认的差量」
   keywords: [],
+  // GET /api/keywords 返回的全局有效值，弹窗里当占位符用
+  keywordDefaults: null,
+  keywordLimits: null,
   view: 'unread', // 'unread' | 'all'
   keyword: '全部',
   query: '',
@@ -123,7 +127,7 @@ export const rows = computed(() => {
   return result;
 });
 
-export const keywordTabs = computed(() => ['全部', ...state.keywords]);
+export const keywordTabs = computed(() => ['全部', ...state.keywords.map((item) => item.name)]);
 
 let pollTimer = null;
 
@@ -137,8 +141,9 @@ export async function loadDeals({ silent = false } = {}) {
     state.readIds = new Set(data.read || []);
     state.baselineAt = new Date(data.baseline || 0).getTime();
     state.error = '';
-    // 列表先渲染出来，互动数据随后在后台补，不阻塞首屏
-    refreshInteractions();
+    // 列表先渲染出来，互动数据随后在后台补，不阻塞首屏。
+    // 非静默加载（用户打开或刷新页面）时额度全给当前屏。
+    refreshInteractions({ screenBoost: !silent });
   } catch (error) {
     state.error = error.message;
   } finally {
@@ -150,7 +155,9 @@ export async function loadKeywords() {
   try {
     const data = await api.fetchKeywords();
     state.keywords = data.keywords || [];
-    if (state.keyword !== '全部' && !state.keywords.includes(state.keyword)) {
+    state.keywordDefaults = data.defaults || null;
+    state.keywordLimits = data.limits || null;
+    if (state.keyword !== '全部' && !state.keywords.some((item) => item.name === state.keyword)) {
       state.keyword = '全部';
     }
   } catch {
@@ -215,9 +222,21 @@ export function stopPolling() {
 
 const INTERACTION_TTL_MS = 30 * 60 * 1000; // 和服务端 refreshTtlMinutes 对齐
 const INTERACTION_BATCH = 6; // 一批大约 1 秒，回来一批就刷一批
-const INTERACTION_MAX = 12; // 单次加载最多补 12 条，剩下的等下一轮轮询
+const INTERACTION_MAX = 12; // 每轮最多补 12 条，剩下的等下一轮
+// 每轮给「当前屏」留的额度，剩下的补看不见的。
+// 全给当前屏的话，历史欠账永远轮不到；全给队列的话，用户正看着的数字反而是旧的。
+const INTERACTION_VISIBLE_MAX = 8;
+// 页面 60 秒轮询一次，但详情页请求每 5 分钟才发一轮 ——
+// 否则每分钟 12 条，一小时 720 次，太容易触发风控。
+const INTERACTION_ROUND_MS = 5 * 60 * 1000;
+// 只补最近 3 天入库的：更老的券通常已过期，互动数再涨也没意义
+const INTERACTION_MAX_AGE_MS = 3 * 86400000;
+// 详情页被 WAF 挡住时，别每 5 分钟白试一轮。半小时后再探一次。
+const INTERACTION_DOWN_MS = 30 * 60 * 1000;
 
 let refreshing = false;
+let lastRoundAt = 0;
+let downUntil = 0;
 
 /** 只改字段、不换对象 —— 不触发重排，也不打断 TransitionGroup */
 function applyInteractions(map) {
@@ -238,30 +257,71 @@ function applyInteractions(map) {
 }
 
 /**
- * 补互动数据：挑「未读 + 本地没有新值」的，按批串行请求。
+ * 补互动数据：最近 3 天入库 + 本地没有新值的，按批串行请求。
  * fire-and-forget，失败静默 —— 数字旧一点不影响用，比弹错误好。
+ *
+ * 挑谁去补有两层考虑：
+ * 1. 当前屏优先。用户从上往下看，上面那几条最可能被注意到，
+ *    排在几十位之后的老条目就算刷了也没人看。首屏（手动打开/刷新）
+ *    的额度全给当前屏，60 秒轮询的则留 4 条给历史欠账。
+ * 2. 屏幕外按「最久没刷过」补。按时间取前 N 条的老写法会让
+ *    后排条目永远轮不到，数字永久冻住；现在刷完会更新 interactionsAt，
+ *    自然沉到队尾，形成轮转。
  */
-export async function refreshInteractions() {
+export async function refreshInteractions({ screenBoost = false } = {}) {
   if (refreshing) return;
+  const now = Date.now();
+  if (now < downUntil) return;
+  if (now - lastRoundAt < INTERACTION_ROUND_MS) return;
+
   refreshing = true;
+  lastRoundAt = now;
 
   try {
-    const now = Date.now();
-    const targets = state.deals
-      .filter(isPending)
-      .filter(
-        (deal) =>
-          !deal.interactionsAt ||
-          now - new Date(deal.interactionsAt).getTime() > INTERACTION_TTL_MS
-      )
-      .slice(0, INTERACTION_MAX)
-      .map((deal) => deal.articleId);
+    const inWindow = (deal) => {
+      const fetched = new Date(deal.fetchedAt).getTime();
+      return Number.isFinite(fetched) && now - fetched <= INTERACTION_MAX_AGE_MS;
+    };
+    const stale = (deal) =>
+      !deal.interactionsAt ||
+      now - new Date(deal.interactionsAt).getTime() > INTERACTION_TTL_MS;
 
+    // 当前屏：和渲染用的是同一个顺序，所以取的就是用户眼睛所在的那批
+    const onScreen = orderedDeals.value
+      .slice(0, state.visible)
+      .filter((deal) => inWindow(deal) && stale(deal));
+
+    const picked = onScreen.slice(
+      0,
+      screenBoost ? INTERACTION_MAX : INTERACTION_VISIBLE_MAX
+    );
+
+    // 屏幕外的欠账：最久没刷过的优先，都没刷过时先补入库更早的
+    const shownIds = new Set(onScreen.map((deal) => deal.articleId));
+    const backlog = state.deals
+      .filter((deal) => !shownIds.has(deal.articleId))
+      .filter((deal) => inWindow(deal) && stale(deal))
+      .sort((a, b) => {
+        const at = a.interactionsAt ? new Date(a.interactionsAt).getTime() : 0;
+        const bt = b.interactionsAt ? new Date(b.interactionsAt).getTime() : 0;
+        if (at !== bt) return at - bt;
+        return new Date(a.fetchedAt) - new Date(b.fetchedAt);
+      });
+
+    picked.push(...backlog.slice(0, INTERACTION_MAX - picked.length));
+
+    const targets = picked.map((deal) => deal.articleId);
     for (let start = 0; start < targets.length; start += INTERACTION_BATCH) {
       let data;
       try {
         data = await api.fetchInteractions(targets.slice(start, start + INTERACTION_BATCH));
       } catch {
+        break;
+      }
+      // 后端说「抓不到」（详情页被验证码挡住）：停半小时再试，
+      // 这期间数字靠采集进程的列表页补丁更新
+      if (data && data.unavailable) {
+        downUntil = Date.now() + INTERACTION_DOWN_MS;
         break;
       }
       // 每次都按「当前」的 state.deals 匹配：请求期间它可能已被轮询整体替换

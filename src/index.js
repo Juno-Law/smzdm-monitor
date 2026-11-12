@@ -3,10 +3,12 @@ const { HttpSource } = require('./source-http');
 const { ApiSource } = require('./source-api');
 const { enrichAll } = require('./detail');
 const { Store, Reads, parseTime } = require('./store');
+const interactions = require('./interactions');
 const { notifyRound } = require('./notify');
 const { createServer } = require('./server');
 
 const { read: readConfig, CONFIG_PATH } = require('./config');
+const { keywordNames, buildRules } = require('./keywords');
 
 const cfg = readConfig();
 const ONCE = process.argv.includes('--once');
@@ -26,17 +28,6 @@ function resolveMode() {
   return cfg.api && cfg.api.enabled ? 'api' : 'http';
 }
 
-// 选门槛：只在综合排序出现的条目走「严门槛」，其余走默认门槛
-// 双路都出现的说明既新又热，仍然按默认门槛放过
-function pickGate(it, gate) {
-  const dg = gate && gate.defaultSort;
-  if (!dg) return gate;
-  const s = it.sorts || [];
-  const onlyDefault = s.length === 1 && s[0] === 'default';
-  const applies = dg.appliesTo === 'hasDefault' ? s.includes('default') : onlyDefault;
-  return applies ? dg : gate;
-}
-
 function passGate(it, g) {
   const worthy = it.worthy || 0;
   const comments = it.comments || 0;
@@ -45,7 +36,7 @@ function passGate(it, g) {
   return g.combine === 'all' ? worthy >= minW && comments >= minC : worthy >= minW || comments >= minC;
 }
 
-function filterItems(items, cfg, opts = {}) {
+function filterItems(items, rulesFor, opts = {}) {
   const { skipInteraction = false } = opts;
   const kept = [];
   const drop = {
@@ -54,51 +45,50 @@ function filterItems(items, cfg, opts = {}) {
     expired: 0,
     noInteraction: 0,
     lowInteraction: 0,
-    lowInteractionDefault: 0,
     noId: 0,
   };
-  const gate = cfg.interactionGate;
   for (const it of items) {
     if (!it.articleId || !it.title) {
       drop.noId++;
       continue;
     }
-    if (cfg.skipExpired && it.expired) {
+    // 每个词的规则不同，逐条取；查不到就回落全局默认
+    const r = rulesFor(it.keyword);
+    const gate = r.interactionGate;
+
+    if (r.skipExpired && it.expired) {
       drop.expired++;
       continue;
     }
-    if (!skipInteraction && cfg.skipNoInteraction) {
+    if (!skipInteraction && r.skipNoInteraction) {
       const interactions = (it.worthy || 0) + (it.unworthy || 0) + (it.favs || 0) + (it.comments || 0);
       if (interactions <= 0) {
         drop.noInteraction++;
         continue;
       }
-      // 互动门槛：最新排序「值 或 评论」任一达标即可；
-      // 只在综合排序出现的条目要「值 ≥ 5 且 评论 ≥ 5」，热度够的真好价才留
+      // 互动门槛：最新排序和综合排序用同一套，值/评论谁达标都算（combine=all 时两个都要）
       if (gate && !it.interactionUnknown) {
-        const g = pickGate(it, gate);
-        if (!passGate(it, g)) {
-          if (g !== gate) drop.lowInteractionDefault++;
-          else drop.lowInteraction++;
+        if (!passGate(it, gate)) {
+          drop.lowInteraction++;
           continue;
         }
       }
     }
-    if (cfg.maxAgeDays) {
+    if (r.maxAgeDays) {
       const ageDays = (Date.now() - new Date(it.pubTime).getTime()) / 86400000;
-      if (ageDays > cfg.maxAgeDays) {
+      if (ageDays > r.maxAgeDays) {
         drop.stale++;
         continue;
       }
     }
     // 只在综合排序出现的条目：它靠热度上榜，可能是几十小时前的。
     // 这类要看但要有上限 —— 超过两天基本是已经死掉、只是还挂在热榜上的老帖
-    if (cfg.maxAgeHoursDefault) {
+    if (r.maxAgeHoursDefault) {
       const s = it.sorts || [];
       const defaultOnly = s.length === 1 && s[0] === 'default';
       if (defaultOnly) {
         const ageHours = (Date.now() - new Date(it.pubTime).getTime()) / 3600000;
-        if (ageHours > cfg.maxAgeHoursDefault) {
+        if (ageHours > r.maxAgeHoursDefault) {
           drop.staleDefault++;
           continue;
         }
@@ -110,10 +100,11 @@ function filterItems(items, cfg, opts = {}) {
 }
 
 // 每个关键词只保留搜索页最前面 N 条（和人工“看前几条”一致）
-function limitPerKeyword(items, n) {
+function limitPerKeyword(items, rulesFor) {
   const count = new Map();
   const out = [];
   for (const it of items) {
+    const n = rulesFor(it.keyword).maxItemsPerKeyword || 40;
     const c = count.get(it.keyword) || 0;
     if (c >= n) continue;
     count.set(it.keyword, c + 1);
@@ -126,12 +117,12 @@ function limitPerKeyword(items, n) {
 function reloadKeywords() {
   try {
     const c = readConfig();
-    if (!Array.isArray(c.keywords)) return;
-    const list = c.keywords.map((s) => String(s).trim()).filter(Boolean);
-    if (!list.length) return;
-    if (list.join('\u0000') === cfg.keywords.join('\u0000')) return;
+    const list = c.keywords || [];
+    if (!list.length) return; // 全清空了就沿用上次，别让采集直接停摆
+    // 现在 keywords 是对象数组，只能按结构比较
+    if (JSON.stringify(list) === JSON.stringify(cfg.keywords)) return;
     cfg.keywords = list;
-    log(`关键词已更新：${list.length} 个 → ${list.join(' / ')}`);
+    log(`关键词/规则已更新：${list.length} 个 → ${keywordNames(list).join(' / ')}`);
   } catch (e) {
     log('重读 config.json 失败，沿用上次关键词:', e.message.split('\n')[0]);
   }
@@ -142,11 +133,18 @@ async function runRound(source, store) {
   const mode = resolveMode();
   const fromApi = mode === 'api';
   reloadKeywords();
-  log(`开始一轮，关键词 ${cfg.keywords.length} 个（来源：${SOURCE_LABEL[mode]}）`);
+
+  // 本轮把关键词和规则各拷一份局部引用：即使下一轮开始时配置被改，
+  // 这一轮的过滤也只用开跑那一刻的规则
+  const keywords = cfg.keywords;
+  const names = keywordNames(keywords);
+  const rulesFor = buildRules({ ...cfg, keywords });
+
+  log(`开始一轮，关键词 ${names.length} 个（来源：${SOURCE_LABEL[mode]}）`);
 
   let raw = [];
   try {
-    raw = await source.searchAll(cfg.keywords);
+    raw = await source.searchAll(names);
   } catch (e) {
     log('采集失败:', e.message.split('\n')[0]);
     return;
@@ -158,9 +156,28 @@ async function runRound(source, store) {
     fetchedAt: new Date().toISOString(),
   }));
 
+  // 已入库的条目不再参与入库判断，但它们的值/评论还在涨。
+  // 顺手把列表页的最新数字写进补丁层（deals.jsonl 只追加不改，见 interactions.js），
+  // 否则页面上下滑到的老条目会永远停在入库那一刻。只增不减，防止滞后的列表页把数改小。
+  const known = enriched.filter((it) => {
+    if (!it.articleId || !store.has(it.articleId)) return false;
+    // 四项全 0 多半是列表页没解析出来，别把 0 当成真实值写进去
+    return (it.worthy || 0) + (it.unworthy || 0) + (it.favs || 0) + (it.comments || 0) > 0;
+  });
+  if (known.length) {
+    const patched = interactions.saveMany(
+      known.map((it) => [
+        it.articleId,
+        { worthy: it.worthy, unworthy: it.unworthy, favs: it.favs, comments: it.comments },
+      ]),
+      { maxOnly: true }
+    );
+    if (patched) log(`  互动补丁：${patched} 条已入库条目的数字有变化`);
+  }
+
   // 阶段一：先做不依赖互动的过滤（过期/超期/无效），把详情页请求量压到最低
-  const pre = filterItems(enriched, cfg, { skipInteraction: true });
-  const limited = limitPerKeyword(pre.kept, cfg.maxItemsPerKeyword || 30);
+  const pre = filterItems(enriched, rulesFor, { skipInteraction: true });
+  const limited = limitPerKeyword(pre.kept, rulesFor);
   const candidates = limited.filter((it) => !store.has(it.articleId));
 
   log(
@@ -181,14 +198,13 @@ async function runRound(source, store) {
   }
 
   // 阶段三：拿到互动后再做最终过滤（补全时可能发现已过期）
-  const finalCheck = filterItems(items, cfg, { skipInteraction: false });
+  const finalCheck = filterItems(items, rulesFor, { skipInteraction: false });
   const fresh = finalCheck.kept;
   const drop = {
     ...pre.drop,
     expired: pre.drop.expired + finalCheck.drop.expired,
     noInteraction: finalCheck.drop.noInteraction,
     lowInteraction: finalCheck.drop.lowInteraction,
-    lowInteractionDefault: finalCheck.drop.lowInteractionDefault,
     stale: pre.drop.stale + finalCheck.drop.stale,
     staleDefault: pre.drop.staleDefault + finalCheck.drop.staleDefault,
   };
@@ -208,11 +224,13 @@ async function runRound(source, store) {
     );
   }
 
-  if (fresh.length) {
-    notifyRound(fresh, {
+  // notify:false 的词照样入库，只是不弹桌面通知
+  const toastItems = fresh.filter((it) => rulesFor(it.keyword).notify);
+  if (toastItems.length) {
+    notifyRound(toastItems, {
       port: cfg.server.port,
-      maxPerRound: cfg.notify.maxPerRound || 5,
-      enabled: cfg.notify.toast !== false,
+      maxPerRound: (cfg.notify && cfg.notify.maxPerRound) || 5,
+      enabled: (cfg.notify && cfg.notify.toast) !== false,
     });
   }
 }
@@ -258,13 +276,30 @@ async function main() {
   await runRound(source, store);
   const interval = (cfg.intervalMinutes || 15) * 60 * 1000;
   log(`下次检查在 ${cfg.intervalMinutes} 分钟后`);
+
+  // 上一轮没跑完就别再开一轮：两轮同时抓会把同一批条目重复入队、重复通知
+  let roundRunning = false;
   setInterval(async () => {
-    await runRound(source, store);
+    if (roundRunning) {
+      log('上一轮还没结束，跳过这次');
+      return;
+    }
+    roundRunning = true;
+    try {
+      await runRound(source, store);
+    } finally {
+      roundRunning = false;
+    }
     log(`下次检查在 ${cfg.intervalMinutes} 分钟后`);
   }, interval);
 }
 
-main().catch((e) => {
-  console.error('FATAL:', e);
-  process.exit(1);
-});
+// 作为脚本直接跑时才启动采集；被 require（比如验证过滤逻辑）时只导出函数
+if (require.main === module) {
+  main().catch((e) => {
+    console.error('FATAL:', e);
+    process.exit(1);
+  });
+}
+
+module.exports = { filterItems, limitPerKeyword, runRound };

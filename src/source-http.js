@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright-core');
 const { resolveExecutable } = require('./config');
+const { keywordNames } = require('./keywords');
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0';
@@ -155,7 +156,7 @@ class HttpSource {
         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
       });
       const page = await ctx.newPage();
-      await page.goto(buildUrl(this.cfg.keywords[0] || '牛奶', 1, 'time'), {
+      await page.goto(buildUrl(keywordNames(this.cfg.keywords)[0] || '牛奶', 1, 'time'), {
         waitUntil: 'domcontentloaded',
         timeout: 45000,
       });

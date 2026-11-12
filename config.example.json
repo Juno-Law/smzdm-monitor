@@ -1,7 +1,7 @@
 {
   "keywords": [
-    "机械键盘",
-    "洗衣凝珠"
+    { "name": "机械键盘" },
+    { "name": "洗衣凝珠", "rules": { "maxItemsPerKeyword": 10 } }
   ],
   "intervalMinutes": 15,
   "source": "http",
@@ -15,15 +15,9 @@
   "skipExpired": true,
   "skipNoInteraction": true,
   "interactionGate": {
-    "minWorthy": 2,
-    "minComments": 2,
-    "combine": "any",
-    "defaultSort": {
-      "minWorthy": 5,
-      "minComments": 5,
-      "combine": "all",
-      "appliesTo": "defaultOnly"
-    }
+    "minWorthy": 1,
+    "minComments": 1,
+    "combine": "any"
   },
   "maxAgeDays": 7,
   "maxAgeHoursDefault": 48,

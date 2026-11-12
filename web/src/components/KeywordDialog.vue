@@ -1,33 +1,58 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { Plus, Tags, X } from 'lucide-vue-next';
+import { Plus, SlidersHorizontal, Tags, X } from 'lucide-vue-next';
 import { api } from '../api';
 import { state } from '../stores/deals';
 import { useToast } from '../composables/useToast';
+import KeywordRules from './KeywordRules.vue';
 
 /** v-model:open —— 父组件控制开关，组件自己不持有可见性 */
 const open = defineModel('open', { type: Boolean, default: false });
 
-const draft = ref([]);
+const draft = ref([]); // [{ name, rules? }]
 const input = ref('');
 const saving = ref(false);
+const expanded = ref('');
 const { show } = useToast();
 
 const isDuplicate = computed(() => {
   const value = input.value.trim().toLowerCase();
-  return Boolean(value) && draft.value.some((keyword) => keyword.toLowerCase() === value);
+  return Boolean(value) && draft.value.some((item) => item.name.toLowerCase() === value);
 });
 
 // 每次打开都从当前配置重新拿一份草稿，取消就等于丢弃
 watch(open, (visible) => {
   if (!visible) return;
-  draft.value = [...state.keywords];
+  draft.value = state.keywords.map((item) => ({
+    name: item.name,
+    // 深拷贝，面板里改的是草稿，点取消就整份丢掉
+    rules: item.rules ? JSON.parse(JSON.stringify(item.rules)) : undefined,
+  }));
+  expanded.value = '';
   input.value = '';
 });
 
 watch(open, (visible) => {
   document.body.style.overflow = visible ? 'hidden' : '';
 });
+
+/** 自定义了几项 —— 用于行头的徽标，不改变任何逻辑 */
+function ruleCount(rules) {
+  if (!rules) return 0;
+  let count = 0;
+  for (const key of ['skipExpired', 'skipNoInteraction', 'maxAgeDays', 'maxAgeHoursDefault', 'maxItemsPerKeyword', 'notify']) {
+    if (rules[key] !== undefined) count++;
+  }
+  const gate = rules.interactionGate || {};
+  for (const key of ['minWorthy', 'minComments', 'combine']) {
+    if (gate[key] !== undefined) count++;
+  }
+  return count;
+}
+
+function toggle(name) {
+  expanded.value = expanded.value === name ? '' : name;
+}
 
 function addKeyword() {
   const value = input.value.trim().replace(/\s+/g, ' ');
@@ -42,12 +67,14 @@ function addKeyword() {
     return;
   }
 
-  draft.value.push(value);
+  draft.value.push({ name: value });
+  expanded.value = value; // 新加的立刻展开，省一次点击
   input.value = '';
 }
 
 function removeKeyword(index) {
-  draft.value.splice(index, 1);
+  const [removed] = draft.value.splice(index, 1);
+  if (removed && expanded.value === removed.name) expanded.value = '';
 }
 
 async function save() {
@@ -57,11 +84,15 @@ async function save() {
     if (!result.ok) throw new Error(result.error || '保存失败');
 
     state.keywords = result.keywords || draft.value;
-    if (state.keyword !== '全部' && !state.keywords.includes(state.keyword)) {
+    if (result.defaults) state.keywordDefaults = result.defaults;
+    if (state.keyword !== '全部' && !state.keywords.some((item) => item.name === state.keyword)) {
       state.keyword = '全部';
     }
 
-    show(`已保存 ${state.keywords.length} 个关键词，下一轮采集生效`);
+    const custom = state.keywords.filter((item) => item.rules).length;
+    show(
+      `已保存 ${state.keywords.length} 个关键词${custom ? `（${custom} 个有自定义规则）` : ''}，下一轮采集生效`
+    );
     open.value = false;
   } catch (error) {
     show(error.message);
@@ -88,7 +119,7 @@ onBeforeUnmount(() => {
         <div class="absolute inset-0 bg-ink/40 backdrop-blur-sm" @click="open = false" />
 
         <div
-          class="panel relative flex max-h-[85vh] w-full flex-col rounded-t-2xl bg-surface shadow-2xl sm:max-w-md sm:rounded-2xl"
+          class="panel relative flex max-h-[85vh] w-full flex-col rounded-t-2xl bg-surface shadow-2xl sm:max-w-lg sm:rounded-2xl"
         >
           <header class="flex items-start justify-between gap-3 px-5 pb-3 pt-5">
             <div>
@@ -97,7 +128,7 @@ onBeforeUnmount(() => {
                 采集关键词
               </h2>
               <p class="mt-1 text-[12.5px] text-ink-3">
-                每行一个词，一次搜索一条。保存后下一轮采集生效，不用重启。
+                每行一个词，点滑杆可单独设规则；不填的项跟随全局。保存后下一轮采集生效。
               </p>
             </div>
             <button
@@ -115,21 +146,51 @@ onBeforeUnmount(() => {
               还没有关键词，先加一个
             </div>
 
-            <ul v-else class="flex flex-wrap gap-2">
+            <ul v-else class="space-y-2">
               <li
-                v-for="(keyword, index) in draft"
-                :key="keyword"
-                class="group flex items-center gap-1.5 rounded-lg bg-canvas py-1 pl-2.5 pr-1.5 text-[13px] text-ink-2 ring-1 ring-line"
+                v-for="(item, index) in draft"
+                :key="item.name"
+                class="overflow-hidden rounded-xl ring-1 ring-line"
               >
-                {{ keyword }}
-                <button
-                  type="button"
-                  class="grid size-4 place-items-center rounded text-ink-4 transition-colors hover:bg-brand-soft hover:text-brand"
-                  :aria-label="`删除 ${keyword}`"
-                  @click="removeKeyword(index)"
-                >
-                  <X :size="11" />
-                </button>
+                <div class="flex items-center gap-1 py-1.5 pl-3 pr-1.5">
+                  <button type="button" class="flex min-w-0 flex-1 items-center gap-2 text-left" @click="toggle(item.name)">
+                    <span class="truncate text-[13px] text-ink-2">{{ item.name }}</span>
+                    <span
+                      v-if="ruleCount(item.rules)"
+                      class="shrink-0 rounded-full bg-brand-soft px-1.5 py-0.5 text-[10.5px] text-brand"
+                    >
+                      自定义 {{ ruleCount(item.rules) }} 项
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    class="grid size-6 shrink-0 place-items-center rounded-md transition-colors hover:bg-canvas"
+                    :aria-expanded="expanded === item.name"
+                    :aria-label="`${item.name} 的规则`"
+                    @click="toggle(item.name)"
+                  >
+                    <SlidersHorizontal
+                      :size="13"
+                      :class="expanded === item.name ? 'text-brand' : 'text-ink-4'"
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    class="grid size-6 shrink-0 place-items-center rounded-md text-ink-4 transition-colors hover:bg-brand-soft hover:text-brand"
+                    :aria-label="`删除 ${item.name}`"
+                    @click="removeKeyword(index)"
+                  >
+                    <X :size="12" />
+                  </button>
+                </div>
+
+                <div v-if="expanded === item.name" class="border-t border-line bg-canvas/60 px-3 py-3">
+                  <KeywordRules
+                    v-model="item.rules"
+                    :defaults="state.keywordDefaults || {}"
+                    :limits="state.keywordLimits || {}"
+                  />
+                </div>
               </li>
             </ul>
           </div>

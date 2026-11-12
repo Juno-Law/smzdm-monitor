@@ -1,7 +1,11 @@
 // 直连文章详情页，补齐「值 / 不值 / 收藏 / 评论」
-// 搜索页有 WAF，但 www.smzdm.com/p/{id} 可以纯 HTTP 拿到，不需要浏览器。
-const UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+// 搜索页有 WAF，但 www.smzdm.com/p/{id} 本来可以纯 HTTP 拿到，不需要浏览器。
+//
+// 2026-11 起普通浏览器 UA 会被腾讯验证码（TCaptcha）拦掉，拿到的是一张 1.7KB 的挑战页。
+// 换成搜索引擎爬虫的 UA 会走服务端渲染分支，直接给出完整 HTML（约 900KB），
+// 值/不值/收藏/评论四个字段都在，跟人工打开详情页看到的数字一致。
+// 这是伪装成爬虫换静态页，属于绕站点的反爬策略，只用于本机低频只读，别提高频率。
+const UA = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
 
 const RE = {
   worthy: /id="rating_worthy_num"[^>]*>\s*(\d+)\s*</,
@@ -34,6 +38,12 @@ async function fetchInteractions(articleId, timeoutMs = 20000) {
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const html = await res.text();
+
+  // 2026-11 起详情页会返回腾讯验证码挑战页（约 1.7KB，含 TCaptcha.js / WafCaptcha）。
+  // 纯 HTTP 拿不到内容，也不该当「页面结构变了」处理 —— 那会把排查引向错误方向。
+  if (html.includes('TCaptcha') || html.includes('WafCaptcha') || html.includes('x-waf-captcha')) {
+    throw new Error('被 WAF 验证码拦截，需要浏览器通过验证');
+  }
 
   const parsed = {
     worthy: num(html.match(RE.worthy)),

@@ -42,7 +42,8 @@ web/
         ├── DealList.vue     列表：骨架屏 / 空状态 / 行分组 / 加载更多
         ├── DealCard.vue     单张卡片
         ├── EmptyState.vue   空状态
-        ├── KeywordDialog.vue 关键词编辑弹窗
+        ├── KeywordDialog.vue 关键词编辑弹窗（行列表 + 行内展开）
+        ├── KeywordRules.vue  单个关键词的规则面板（差量编辑，空 = 跟随全局）
         └── ToastHost.vue    全局提示
 ```
 

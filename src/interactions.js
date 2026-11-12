@@ -69,10 +69,14 @@ function writeAll(all) {
 /**
  * 批量写，只落盘一次。
  * @param {Array<[string, object]>} entries
- * @returns {number} 实际写入条数
+ * @param {{maxOnly?: boolean}} [opts]
+ *   maxOnly = true 时逐字段取较大值，绝不把数字改小 —— 采集用的列表页数据可能比详情页滞后，
+ *   用它覆盖会让页面上刚涨上去的数又掉回去。
+ * @returns {number} 实际写入条数（maxOnly 下数值没变化的条目不计）
  */
-function saveMany(entries) {
+function saveMany(entries, opts = {}) {
   if (!entries.length) return 0;
+  const maxOnly = opts.maxOnly === true;
 
   const all = { ...read() };
   const at = new Date().toISOString();
@@ -81,7 +85,14 @@ function saveMany(entries) {
 
   for (const [id, patch] of entries) {
     if (!id || !valid(patch)) continue;
-    all[id] = { ...pick(patch), at };
+    const prev = valid(all[id]) ? all[id] : null;
+    const next = {};
+    for (const key of FIELDS) {
+      next[key] = maxOnly && prev ? Math.max(prev[key], patch[key]) : patch[key];
+    }
+    // 数值完全没变就不写：省磁盘 IO，也避免把 at 刷成「刚刚」而掩盖真实新鲜度
+    if (prev && FIELDS.every((key) => prev[key] === next[key])) continue;
+    all[id] = { ...next, at };
     changed++;
   }
   if (!changed) return 0;
@@ -167,9 +178,13 @@ function refresh(ids, opts = {}) {
           log: opts.log || (() => {}),
         }
       );
-      refreshed = saveMany(
-        r.items.filter((it) => !it.interactionUnknown).map((it) => [it.articleId, it])
-      );
+      const usable = r.items.filter((it) => !it.interactionUnknown);
+      // 一条都没解析出来：多半是详情页被 WAF 挡住了，不是「本条失败」。
+      // 告诉调用方这个事实，让前端别再每 5 分钟白发一批请求。
+      if (!usable.length) {
+        return { ok: true, unavailable: true, refreshed: 0, items: snapshot(uniq) };
+      }
+      refreshed = saveMany(usable.map((it) => [it.articleId, it]));
     }
 
     return { ok: true, refreshed, items: snapshot(uniq) };

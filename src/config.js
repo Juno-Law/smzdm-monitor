@@ -1,6 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
+const { normalizeKeywords } = require('./keywords');
+
 const ROOT = path.join(__dirname, '..');
 const CONFIG_PATH = path.join(ROOT, 'config.json');
 const EXAMPLE_PATH = path.join(ROOT, 'config.example.json');
@@ -21,7 +23,12 @@ function ensure() {
 
 function read() {
   ensure();
-  return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+  const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+  // 关键词在磁盘上可能是旧格式（纯字符串），也可能是带 rules 的对象。
+  // 在唯一的读盘出口统一成对象数组，下游就不用到处判断类型了。
+  // 注意：这里只归一化内存里的对象，不写盘 —— 迁移发生在前端点保存那一刻。
+  raw.keywords = normalizeKeywords(raw.keywords);
+  return raw;
 }
 
 // 各平台的常见安装位置，按优先级排
